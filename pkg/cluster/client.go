@@ -59,6 +59,7 @@ func newClient(services ServiceSetFunc) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+<<<<<<< HEAD
 	c := &httpclient.Client{
 		ErrPrefix:   "cluster",
 		ErrNotFound: ErrNotFound,
@@ -87,8 +88,28 @@ type LocalClient interface {
 	AddJobs(*host.AddJobsReq) (*host.AddJobsRes, error)
 	RegisterHost(*host.Host, chan *host.Job) Stream
 	RemoveJobs([]string) error
+||||||| merged common ancestors
+	return &Client{service: ss, leaderChange: make(chan struct{})}, nil
 }
 
+// A LocalClient implements Client methods against an in-process leader.
+type LocalClient interface {
+	ListHosts() (map[string]host.Host, error)
+	AddJobs(*host.AddJobsReq) (*host.AddJobsRes, error)
+	RegisterHost(*host.Host, chan *host.Job) Stream
+	RemoveJobs([]string) error
+=======
+	c := &httpclient.Client{
+		ErrPrefix:   "cluster",
+		ErrNotFound: ErrNotFound,
+		URL:         url,
+		HTTP:        nil,
+	}
+	return &Client{service: ss, c: c, leaderChange: make(chan struct{})}, nil
+>>>>>>> host, pkg, cluster: Ports host rpc functions to http
+}
+
+<<<<<<< HEAD
 // NewClientWithSelf returns a client configured to use self to talk to the
 // leader with the identifier id.
 func NewClientWithSelf(id string, self LocalClient) (*Client, error) {
@@ -97,6 +118,15 @@ func NewClientWithSelf(id string, self LocalClient) (*Client, error) {
 // identifier id.
 func NewClientWithID(id string) (*Client, error) {
 >>>>>>> lots of fixes
+||||||| merged common ancestors
+// NewClientWithSelf returns a client configured to use self to talk to the
+// leader with the identifier id.
+func NewClientWithSelf(id string, self LocalClient) (*Client, error) {
+=======
+// NewClient returns a client configured to talk to the leader with the
+// identifier id.
+func NewClientWithID(id string) (*Client, error) {
+>>>>>>> host, pkg, cluster: Ports host rpc functions to http
 	client, err := newClient(nil)
 	if err != nil {
 		return nil, err
