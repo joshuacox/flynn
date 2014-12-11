@@ -8,6 +8,7 @@ import (
 
 	"github.com/flynn/flynn/Godeps/_workspace/src/github.com/julienschmidt/httprouter"
 	"github.com/flynn/flynn/host/types"
+	"github.com/flynn/flynn/pkg/httphelper"
 	"github.com/flynn/flynn/pkg/sse"
 )
 
@@ -121,20 +122,12 @@ func (s *Cluster) StreamHostEvents(ch chan host.HostEvent) error {
 }
 
 // HTTP Route Handles
-
-// TEMP: Helper function for writing out errors in JSON
-func httpWriteError(w http.ResponseWriter, e error) {
-	enc := json.NewEncoder(w)
-	w.WriteHeader(400)
-	enc.Encode(e)
-}
-
 func listHosts(c *Cluster, w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	// TODO wip
 	ret := make(map[string]host.Host)
 	err := c.ListHosts(&ret)
 	if err != nil {
-		httpWriteError(w, err)
+		httphelper.NewReponseHelper(w).Error(err)
 		return
 	}
 	w.WriteHeader(200)
@@ -151,20 +144,21 @@ func registerHost(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprou
 	err := c.RegisterHost(hostID, h)
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
-		httpWriteError(w, err)
+		httphelper.NewReponseHelper(w).Error(err)
 		return
 	}
 	w.WriteHeader(200)
 }
 
-func addJobs(c *Cluster, w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+func addJobs(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	// TODO wip
+	hostID := ps.ByName("host_id")
 	enc := json.NewEncoder(w)
 	res := host.AddJobsRes{}
 	req := host.AddJobsReq{}
 	err := c.AddJobs(&req, &res)
 	if err != nil {
-		httpWriteError(w, err)
+		httphelper.NewReponseHelper(w).Error(err)
 		return
 	}
 	w.WriteHeader(200)
@@ -172,11 +166,11 @@ func addJobs(c *Cluster, w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 }
 
 func removeJob(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	// TODO wip
-	jobIDs := []string{ps.ByName("id")}
+	hostID := ps.ByName("host_id")
+	jobIDs := []string{ps.ByName("job_id")}
 	err := c.RemoveJobs(hostID, jobIDs)
 	if err != nil {
-		httpWriteError(w, err)
+		httphelper.NewReponseHelper(w).Error(err)
 		return
 	}
 	w.WriteHeader(200)
@@ -189,7 +183,7 @@ func streamHostEvents(c *Cluster, w http.ResponseWriter, r *http.Request, ps htt
 	enc := json.NewEncoder(wr)
 	err := c.StreamHostEvents(ch)
 	if err != nil {
-		httpWriteError(w, err)
+		httphelper.NewReponseHelper(w).Error(err)
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
@@ -233,3 +227,8 @@ func NewHTTPClusterRouter(cluster *Cluster) *httprouter.Router {
 /home/vagrant/go/src/github.com/flynn/flynn/host/sampi/http.go:140: too many arguments in call to c.RegisterHost
 /home/vagrant/go/src/github.com/flynn/flynn/host/sampi/http.go:164: undefined: hostID
 */
+
+// NOTES
+// 1. if not streaming, do not WriteHeader
+// 2. nab a copy of ReponseHelper and put it in a pkg
+// 3. Consult titanous about using https://github.com/gin-gonic/gin
