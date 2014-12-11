@@ -12,6 +12,11 @@ import (
 	"github.com/flynn/flynn/pkg/sse"
 )
 
+type streamHostEventsReq struct {
+	ch   chan host.HostEvent
+	done chan bool
+}
+
 // Cluster
 type Cluster struct {
 	state *State
@@ -103,20 +108,17 @@ func (s *Cluster) RemoveJobs(hostID string, jobIDs []string) error {
 	return nil
 }
 
-func (s *Cluster) StreamHostEvents(ch chan host.HostEvent) error {
-	s.state.AddListener(ch)
-	// (IceDragon) TODO: Figure out how to stream events out and remove listener here
-	// without exposing this method to the HTTP interface
+func (s *Cluster) StreamHostEvents(req *streamHostEventsReq) error {
+	s.state.AddListener(req.ch)
 	go func() {
-		// (IceDragon) TODO: Move this to the HTTP caller
-		//<-w.(http.CloseNotifier).CloseNotify()
+		<-req.done
 		go func() {
 			// drain to prevent deadlock while removing the listener
-			for range ch {
+			for range req.ch {
 			}
 		}()
-		s.state.RemoveListener(ch)
-		close(ch)
+		s.state.RemoveListener(req.ch)
+		close(req.ch)
 	}()
 	return nil
 }
@@ -177,15 +179,21 @@ func removeJob(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprouter
 }
 
 func streamHostEvents(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	// TODO wip
 	ch := make(chan host.HostEvent)
+	done := make(chan struct{})
+	req := streamHostEventsReq{ch: ch, done: done}
 	wr := sse.NewSSEWriter(w)
 	enc := json.NewEncoder(wr)
-	err := c.StreamHostEvents(ch)
+	err := c.StreamHostEvents(&req)
 	if err != nil {
 		httphelper.NewReponseHelper(w).Error(err)
 		return
 	}
+	go func() {
+		<-w.(http.CloseNotifier).CloseNotify()
+		done <- true
+		close(done)
+	}()
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.WriteHeader(200)
 	wr.Flush()
