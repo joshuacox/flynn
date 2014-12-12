@@ -12,16 +12,6 @@ import (
 	"github.com/flynn/flynn/pkg/sse"
 )
 
-type registerHostReq struct {
-	ch   chan *host.Job
-	done chan bool
-}
-
-type streamHostEventsReq struct {
-	ch   chan host.HostEvent
-	done chan bool
-}
-
 // Cluster
 type Cluster struct {
 	state *State
@@ -60,7 +50,7 @@ func (s *Cluster) AddJobs(req *host.AddJobsReq, res *host.AddJobsRes) error {
 
 // Host Service methods
 
-func (s *Cluster) RegisterHost(hostID *string, h *host.Host, req *registerHostReq) error {
+func (s *Cluster) RegisterHost(hostID *string, h *host.Host, ch chan *host.Job, done chan bool) error {
 	*hostID = h.ID
 	id := *hostID
 	if id == "" {
@@ -81,7 +71,7 @@ func (s *Cluster) RegisterHost(hostID *string, h *host.Host, req *registerHostRe
 
 	var err error
 	for job := range jobs {
-		req.ch <- job
+		ch <- job
 	}
 
 	s.state.Begin()
@@ -101,17 +91,17 @@ func (s *Cluster) RemoveJobs(hostID string, jobIDs []string) error {
 	return nil
 }
 
-func (s *Cluster) StreamHostEvents(req *streamHostEventsReq) error {
-	s.state.AddListener(req.ch)
+func (s *Cluster) StreamHostEvents(ch chan host.HostEvent, done chan bool) error {
+	s.state.AddListener(ch)
 	go func() {
-		<-req.done
+		<-done
 		go func() {
 			// drain to prevent deadlock while removing the listener
-			for range req.ch {
+			for range ch {
 			}
 		}()
-		s.state.RemoveListener(req.ch)
-		close(req.ch)
+		s.state.RemoveListener(ch)
+		close(ch)
 	}()
 	return nil
 }
@@ -151,8 +141,7 @@ func registerHost(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprou
 
 	ch := make(chan *host.Job)
 	done := make(chan bool)
-	req := registerHostReq{ch: ch, done: done}
-	err = c.RegisterHost(&hostID, h, &req)
+	err = c.RegisterHost(&hostID, h, ch, done)
 	if err != nil {
 		rh.Error(err)
 		return
@@ -215,8 +204,7 @@ func removeJob(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprouter
 func streamHostEvents(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	ch := make(chan host.HostEvent)
 	done := make(chan bool)
-	req := streamHostEventsReq{ch: ch, done: done}
-	err := c.StreamHostEvents(&req)
+	err := c.StreamHostEvents(ch, done)
 	if err != nil {
 		httphelper.NewReponseHelper(w).Error(err)
 		return
