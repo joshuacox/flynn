@@ -7,6 +7,7 @@ import (
 
 	"github.com/flynn/flynn/Godeps/_workspace/src/github.com/julienschmidt/httprouter"
 	"github.com/flynn/flynn/host/types"
+	"github.com/flynn/flynn/pkg/httphelper"
 	"github.com/flynn/flynn/pkg/rpcplus"
 	rpc "github.com/flynn/flynn/pkg/rpcplus/comborpc"
 	"github.com/flynn/flynn/pkg/shutdown"
@@ -33,7 +34,7 @@ type Host struct {
 	backend Backend
 }
 
-func (h *Host) ListJobs(arg struct{}, res *map[string]host.ActiveJob) error {
+func (h *Host) ListJobs(res *map[string]host.ActiveJob) error {
 	*res = h.state.Get()
 	return nil
 }
@@ -46,7 +47,7 @@ func (h *Host) GetJob(id string, res *host.ActiveJob) error {
 	return nil
 }
 
-func (h *Host) StopJob(id string, res *struct{}) error {
+func (h *Host) StopJob(id string) error {
 	job := h.state.GetJob(id)
 	if job == nil {
 		return errors.New("host: unknown job")
@@ -79,22 +80,54 @@ func (h *Host) StreamEvents(id string, stream rpcplus.Stream) error {
 	}
 }
 
-func listJobs(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	// || -- Accept: text/event-stream
+type HostHandle func(*Host, http.ResponseWriter, *http.Request, httprouter.Params)
+
+// Helper function for wrapping a ClusterHandle into a httprouter.Handles
+func hostMiddleware(host *Host, handle HostHandle) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+		handle(host, w, r, ps)
+	}
 }
 
-func getJob(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-
+func listJobs(h *Host, w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	// Optionally -- Accept: text/event-stream
+	rh := httphelper.NewReponseHelper(w)
+	var res *map[string]host.ActiveJob
+	err := rh.ListJobs(res)
+	if err != nil {
+		rh.Error(err)
+		return
+	}
+	rh.JSON(200, res)
 }
 
-func stopJob(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-
+func getJob(h *Host, w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	rh := httphelper.NewReponseHelper(w)
+	id := ps.ByName("id")
+	var res *host.ActiveJob
+	err := h.GetJob(id, &res)
+	if err != nil {
+		rh.Error(err)
+		return
+	}
+	rh.JSON(200, res)
 }
 
-func newRouter() {
+func stopJob(h *Host, w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	rh := httphelper.NewReponseHelper(w)
+	id := ps.ByName("id")
+	err := h.StopJob(id)
+	if err != nil {
+		rh.Error(err)
+		return
+	}
+	rh.WriteHeader(200)
+}
+
+func newRouter(host *Host) {
 	r := httprouter.New()
 
-	r.GET("/host/jobs", listJobs)
-	r.GET("/host/jobs/:id", getJob)
-	r.DELETE("/host/jobs/:id", stopJob)
+	r.GET("/host/jobs", hostMiddleware(host, listJobs))
+	r.GET("/host/jobs/:id", hostMiddleware(host, getJob))
+	r.DELETE("/host/jobs/:id", hostMiddleware(host, stopJob))
 }
