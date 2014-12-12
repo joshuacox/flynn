@@ -1,8 +1,15 @@
 package cluster
 
 import (
+	"bufio"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+
 	"github.com/flynn/flynn/host/types"
 	"github.com/flynn/flynn/pkg/httpclient"
+	"github.com/flynn/flynn/pkg/sse"
 )
 
 // Host is a client for a host daemon.
@@ -18,7 +25,7 @@ type Host interface {
 
 	// StreamEvents about job state changes to ch. id may be "all" or a single
 	// job ID.
-	StreamEvents(id string, ch chan<- *host.Event) Stream
+	StreamEvents(id string, ch chan<- host.Event) io.Closer
 
 	// Attach attaches to a job, optionally waiting for it to start before
 	// attaching.
@@ -35,20 +42,19 @@ type hostClient struct {
 
 // NewHostClient creates a new Host that uses client to communicate with it.
 // addr and dial are used by Attach.
-func NewHostClient(addr, key string, http *http.Client, dial httpclient.DialFunc) Host {
-	if dial == nil {
-		dial = net.Dial
+func NewHostClient(addr string, h *http.Client, d httpclient.DialFunc) Host {
+	if d == nil {
+		d = net.Dial
 	}
-	if http == nil {
-		http = http.DefaultClient
+	if h == nil {
+		h = http.DefaultClient
 	}
-	return &hostClient{addr: addr, c: &httpclient.Client{
+	return &hostClient{c: &httpclient.Client{
 		ErrPrefix:   "host",
 		ErrNotFound: ErrNotFound,
-		Key:         key,
 		URL:         addr,
-		HTTP:        http,
-	}, dial: dial}
+		HTTP:        h,
+	}, dial: d}
 }
 
 func (c *hostClient) ListJobs() (map[string]host.ActiveJob, error) {
@@ -67,7 +73,7 @@ func (c *hostClient) StopJob(id string) error {
 	return c.c.Delete(fmt.Sprintf("/host/jobs/%s", id))
 }
 
-func (c *hostClient) StreamEvents(id string, ch chan<- *host.Event) *io.Closer {
+func (c *hostClient) StreamEvents(id string, ch chan<- host.Event) io.Closer {
 	header := http.Header{
 		"Accept": []string{"text/event-stream"},
 	}
@@ -90,8 +96,8 @@ func (c *hostClient) StreamEvents(id string, ch chan<- *host.Event) *io.Closer {
 		r := bufio.NewReader(stream.body)
 		dec := sse.NewDecoder(r)
 		for {
-			event := &host.Event{}
-			if err := dec.Decode(event); err != nil {
+			event := host.Event{}
+			if err := dec.Decode(&event); err != nil {
 				break
 			}
 			stream.Chan <- event
@@ -105,10 +111,10 @@ func (c *hostClient) Close() error {
 }
 
 type EventStream struct {
-	Chan chan *host.Event
+	Chan chan<- host.Event
 	body io.ReadCloser
 }
 
-func (e *EventStream) Close() error {
+func (e EventStream) Close() error {
 	return e.body.Close()
 }
