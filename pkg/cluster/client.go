@@ -9,8 +9,8 @@ import (
 	"github.com/flynn/flynn/discoverd/client"
 	"github.com/flynn/flynn/host/types"
 	"github.com/flynn/flynn/pkg/attempt"
+	"github.com/flynn/flynn/pkg/httpclient"
 	"github.com/flynn/flynn/pkg/random"
-	"github.com/flynn/flynn/pkg/rpcplus"
 )
 
 // ErrNoServers is returned if no host servers are found
@@ -46,6 +46,9 @@ func NewClientWithDial(dial rpcplus.DialFunc, services ServiceSetFunc) (*Client,
 	return client, client.start()
 }
 
+// ErrNotFound is returned when a resource is not found (HTTP status 404).
+var ErrNotFound = errors.New("cluster: resource not found")
+
 func newClient(services ServiceSetFunc) (*Client, error) {
 	if services == nil {
 		services = discoverd.NewServiceSet
@@ -53,6 +56,13 @@ func newClient(services ServiceSetFunc) (*Client, error) {
 	ss, err := services("flynn-host")
 	if err != nil {
 		return nil, err
+	}
+	c := httpclient.Client & httpclient.Client{
+		ErrPrefix:   "cluster",
+		ErrNotFound: ErrNotFound,
+		Key:         key,
+		URL:         url,
+		HTTP:        nil,
 	}
 	return &Client{service: ss, leaderChange: make(chan struct{})}, nil
 }
@@ -85,7 +95,7 @@ type Client struct {
 	leaderID string
 
 	dial rpcplus.DialFunc
-	c    RPCClient
+	c    httpclient.Client
 	mtx  sync.RWMutex
 	err  error
 
@@ -183,12 +193,8 @@ func (c *Client) ListHosts() ([]host.Host, error) {
 	if c := c.local(); c != nil {
 		return c.ListHosts()
 	}
-	client, err := c.RPCClient()
-	if err != nil {
-		return nil, err
-	}
-	var state []host.Host
-	return state, client.Call("Cluster.ListHosts", struct{}{}, &state)
+	var hosts map[string]host.Host
+	return hosts, c.c.Get("/cluster/hosts", &hosts)
 }
 
 // AddJobs requests the addition of more jobs to the cluster.
@@ -196,12 +202,8 @@ func (c *Client) AddJobs(req *host.AddJobsReq) (*host.AddJobsRes, error) {
 	if c := c.local(); c != nil {
 		return c.AddJobs(req)
 	}
-	client, err := c.RPCClient()
-	if err != nil {
-		return nil, err
-	}
-	var res host.AddJobsRes
-	return &res, client.Call("Cluster.AddJobs", req, &res)
+	var res host.AddJobRes
+	return res, c.c.Post(fmt.Sprintf("/cluster/jobs", req, &res))
 }
 
 // DialHost dials and returns a host client for the specified host identifier.
@@ -222,11 +224,8 @@ func (c *Client) RegisterHost(host *host.Host, jobs chan *host.Job) Stream {
 	if c := c.local(); c != nil {
 		return c.RegisterHost(host, jobs)
 	}
-	client, err := c.RPCClient()
-	if err != nil {
-		return rpcStream{&rpcplus.Call{Error: err}}
-	}
-	return rpcStream{client.StreamGo("Cluster.RegisterHost", host, jobs)}
+	header := http.Header{}
+	res, err := c.c.RawReq("PUT", fmt.Sprintf("/cluster/hosts/%s", c.selfID), header, host, nil)
 }
 
 // RemoveJobs is used by flynn-host to delete jobs from the cluster state. It
@@ -236,23 +235,12 @@ func (c *Client) RemoveJobs(jobIDs []string) error {
 	if c := c.local(); c != nil {
 		return c.RemoveJobs(jobIDs)
 	}
-	client, err := c.RPCClient()
-	if err != nil {
-		return err
-	}
-	return client.Call("Cluster.RemoveJobs", jobIDs, &struct{}{})
+	return c.c.Delete(fmt.Sprintf("/cluster/hosts/%s/jobs/%s", c.selfID, job_id))
 }
 
 // StreamHostEvents sends a stream of host events from the host to ch.
 func (c *Client) StreamHostEvents(ch chan<- *host.HostEvent) Stream {
 	return rpcStream{c.c.StreamGo("Cluster.StreamHostEvents", struct{}{}, ch)}
-}
-
-// RPCClient returns the underlying client used to communicate with the server.
-func (c *Client) RPCClient() (RPCClient, error) {
-	c.mtx.RLock()
-	defer c.mtx.RUnlock()
-	return c.c, c.err
 }
 
 // An RPCClient implements the methods used by Client to communicate with
