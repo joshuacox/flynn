@@ -12,6 +12,11 @@ import (
 	"github.com/flynn/flynn/pkg/sse"
 )
 
+type registerHostReq struct {
+	ch   chan *host.Job
+	done chan bool
+}
+
 type streamHostEventsReq struct {
 	ch   chan host.HostEvent
 	done chan bool
@@ -55,7 +60,7 @@ func (s *Cluster) AddJobs(req *host.AddJobsReq, res *host.AddJobsRes) error {
 
 // Host Service methods
 
-func (s *Cluster) RegisterHost(hostID *string, h *host.Host) error {
+func (s *Cluster) RegisterHost(hostID *string, h *host.Host, req *registerHostReq) error {
 	*hostID = h.ID
 	id := *hostID
 	if id == "" {
@@ -75,20 +80,8 @@ func (s *Cluster) RegisterHost(hostID *string, h *host.Host) error {
 	go s.state.sendEvent(id, "add")
 
 	var err error
-	// (IceDragon) TODO: send this to code hell, and replace with something better?
-outer:
-	for {
-		select {
-		case job := <-jobs:
-			// make sure we don't deadlock if there is an error while we're sending
-			select {
-			case stream.Send <- job:
-			case err = <-stream.Error:
-				break outer
-			}
-		case err = <-stream.Error:
-			break outer
-		}
+	for job := range jobs {
+		req.ch <- job
 	}
 
 	s.state.Begin()
@@ -125,46 +118,87 @@ func (s *Cluster) StreamHostEvents(req *streamHostEventsReq) error {
 
 // HTTP Route Handles
 func listHosts(c *Cluster, w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	// TODO wip
+	rh := httphelper.NewReponseHelper(w)
 	ret := make(map[string]host.Host)
 	err := c.ListHosts(&ret)
 	if err != nil {
-		httphelper.NewReponseHelper(w).Error(err)
+		rh.Error(err)
 		return
 	}
 	w.WriteHeader(200)
-	json.NewEncoder(sse.NewSSEWriter(w)).Encode(ret)
+	rh.JSON(200, ret)
 }
 
 func registerHost(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	// TODO wip
-	enc := json.NewEncoder(w)
-	hostID := ps.ByName("id")
-	// (IceDragon) TODO: No, just no, or maybe?. I'm not sure, I need to ask if this is the right way
+	var err error
+	var data []byte
+	var hostID string
+
+	rh := httphelper.NewReponseHelper(w)
+	//hID := ps.ByName("id")
 	h := &host.Host{}
 
-	err := c.RegisterHost(hostID, h)
-	w.Header().Set("Content-Type", "application/json")
+	_, err = r.Body.Read(data)
 	if err != nil {
-		httphelper.NewReponseHelper(w).Error(err)
+		rh.Error(err)
 		return
 	}
+	err = json.Unmarshal(data, &h)
+	if err != nil {
+		rh.Error(err)
+		return
+	}
+
+	ch := make(chan *host.Job)
+	done := make(chan bool)
+	req := registerHostReq{ch: ch, done: done}
+	err = c.RegisterHost(&hostID, h, &req)
+	if err != nil {
+		rh.Error(err)
+		return
+	}
+
+	go func() {
+		<-w.(http.CloseNotifier).CloseNotify()
+		done <- true
+		close(done)
+	}()
+	wr := sse.NewSSEWriter(w)
+	enc := json.NewEncoder(wr)
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.WriteHeader(200)
+	wr.Flush()
+	for data := range ch {
+		enc.Encode(data)
+		wr.Flush()
+	}
 }
 
 func addJobs(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	// TODO wip
-	hostID := ps.ByName("host_id")
-	enc := json.NewEncoder(w)
-	res := host.AddJobsRes{}
+	var err error
+	var data []byte
+
+	rh := httphelper.NewReponseHelper(w)
+	//hostID := ps.ByName("host_id")
 	req := host.AddJobsReq{}
-	err := c.AddJobs(&req, &res)
+	res := host.AddJobsRes{}
+
+	_, err = r.Body.Read(data)
 	if err != nil {
-		httphelper.NewReponseHelper(w).Error(err)
+		rh.Error(err)
 		return
 	}
-	w.WriteHeader(200)
-	json.NewEncoder(sse.NewSSEWriter(w)).Encode(res)
+	err = json.Unmarshal(data, &req)
+	if err != nil {
+		rh.Error(err)
+		return
+	}
+	err = c.AddJobs(&req, &res)
+	if err != nil {
+		rh.Error(err)
+		return
+	}
+	rh.JSON(200, res)
 }
 
 func removeJob(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
@@ -180,10 +214,8 @@ func removeJob(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprouter
 
 func streamHostEvents(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	ch := make(chan host.HostEvent)
-	done := make(chan struct{})
+	done := make(chan bool)
 	req := streamHostEventsReq{ch: ch, done: done}
-	wr := sse.NewSSEWriter(w)
-	enc := json.NewEncoder(wr)
 	err := c.StreamHostEvents(&req)
 	if err != nil {
 		httphelper.NewReponseHelper(w).Error(err)
@@ -194,6 +226,8 @@ func streamHostEvents(c *Cluster, w http.ResponseWriter, r *http.Request, ps htt
 		done <- true
 		close(done)
 	}()
+	wr := sse.NewSSEWriter(w)
+	enc := json.NewEncoder(wr)
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.WriteHeader(200)
 	wr.Flush()
@@ -221,22 +255,3 @@ func NewHTTPClusterRouter(cluster *Cluster) *httprouter.Router {
 	r.GET("/cluster/events", clusterMiddleware(cluster, streamHostEvents))
 	return r
 }
-
-// Issues to resolve:
-/*
-// Since RPC has been removed, these stream(s) need to be replaced with regular channels or something
-/home/vagrant/go/src/github.com/flynn/flynn/host/sampi/http.go:78: undefined: stream
-/home/vagrant/go/src/github.com/flynn/flynn/host/sampi/http.go:79: undefined: stream
-/home/vagrant/go/src/github.com/flynn/flynn/host/sampi/http.go:82: undefined: stream
-/home/vagrant/go/src/github.com/flynn/flynn/host/sampi/http.go:140: undefined: stream
-
-// still wondering why this is throwing a hissy fit
-/home/vagrant/go/src/github.com/flynn/flynn/host/sampi/http.go:140: undefined: h
-/home/vagrant/go/src/github.com/flynn/flynn/host/sampi/http.go:140: too many arguments in call to c.RegisterHost
-/home/vagrant/go/src/github.com/flynn/flynn/host/sampi/http.go:164: undefined: hostID
-*/
-
-// NOTES
-// 1. if not streaming, do not WriteHeader
-// 2. nab a copy of ReponseHelper and put it in a pkg
-// 3. Consult titanous about using https://github.com/gin-gonic/gin
