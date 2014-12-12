@@ -29,15 +29,26 @@ type Host interface {
 }
 
 type hostClient struct {
-	addr string
-	//dial rpcplus.DialFunc
-	c *httpclient.Client
+	dial httpclient.DialFunc
+	c    *httpclient.Client
 }
 
 // NewHostClient creates a new Host that uses client to communicate with it.
 // addr and dial are used by Attach.
-func NewHostClient(addr string, client *httpclient.Client) Host {
-	return &hostClient{addr: addr, c: client}
+func NewHostClient(addr, key string, http *http.Client, dial httpclient.DialFunc) Host {
+	if dial == nil {
+		dial = net.Dial
+	}
+	if http == nil {
+		http = http.DefaultClient
+	}
+	return &hostClient{addr: addr, c: &httpclient.Client{
+		ErrPrefix:   "host",
+		ErrNotFound: ErrNotFound,
+		Key:         key,
+		URL:         addr,
+		HTTP:        http,
+	}, dial: dial}
 }
 
 func (c *hostClient) ListJobs() (map[string]host.ActiveJob, error) {

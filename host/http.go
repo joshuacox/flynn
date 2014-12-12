@@ -12,9 +12,12 @@ import (
 )
 
 func serveHTTP(host *Host, attach *attachHandler, sh *shutdown.Handler) error {
-	if err := rpc.Register(host); err != nil {
-		return err
-	}
+	r := httprouter.New()
+	r.GET("/host/jobs", listJobs)
+	r.GET("/host/jobs/:id", getJob)
+	r.DELETE("/host/jobs/:id", stopJob)
+	go http.ListenAndServe(":8000", r)
+
 	http.Handle("/attach", attach)
 
 	l, err := net.Listen("tcp", ":1113")
@@ -23,13 +26,6 @@ func serveHTTP(host *Host, attach *attachHandler, sh *shutdown.Handler) error {
 	}
 	sh.BeforeExit(func() { l.Close() })
 	go http.Serve(l, nil)
-
-	r := httprouter.New()
-
-	r.GET("/host/jobs", listJobs)
-	r.GET("/host/jobs/:id", getJob)
-	r.DELETE("/host/jobs/:id", stopJob)
-	go http.ListenAndServe(":8000", r)
 	return nil
 }
 
