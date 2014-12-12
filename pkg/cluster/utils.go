@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"errors"
+	"github.com/flynn/flynn/pkg/random"
 	"strings"
 )
 
@@ -14,3 +15,6 @@ func ParseJobID(id string) (string, string, error) {
 	}
 	return ids[0], ids[1], nil
 }
+
+// RandomJobID returns a random job identifier with an optional prefix.
+func RandomJobID(prefix string) string { return prefix + random.UUID() }
