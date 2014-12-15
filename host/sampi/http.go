@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/ioutil"
 	"net/http"
 
 	"github.com/flynn/flynn/Godeps/_workspace/src/github.com/julienschmidt/httprouter"
@@ -155,20 +156,16 @@ func registerHost(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprou
 }
 
 func addJobs(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	var err error
-	var data []byte
-
 	rh := httphelper.NewReponseHelper(w)
-	//hostID := ps.ByName("host_id")
-	var req map[string][]*host.Job
 
-	_, err = r.Body.Read(data)
+	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		rh.Error(err)
 		return
 	}
-	err = json.Unmarshal(data, &req)
-	if err != nil {
+
+	var req map[string][]*host.Job
+	if err := json.Unmarshal(data, &req); err != nil {
 		rh.Error(err)
 		return
 	}
@@ -183,8 +180,7 @@ func addJobs(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprouter.P
 func removeJob(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	hostID := ps.ByName("host_id")
 	jobIDs := []string{ps.ByName("job_id")}
-	err := c.RemoveJobs(hostID, jobIDs)
-	if err != nil {
+	if err := c.RemoveJobs(hostID, jobIDs); err != nil {
 		httphelper.NewReponseHelper(w).Error(err)
 		return
 	}
