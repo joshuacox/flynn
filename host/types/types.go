@@ -98,11 +98,6 @@ type Host struct {
 	Metadata map[string]string
 }
 
-type AddJobsReq struct {
-	// map of host id -> new jobs
-	HostJobs map[string][]*Job
-}
-
 type Event struct {
 	Event string
 	JobID string

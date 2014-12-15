@@ -50,10 +50,10 @@ func (c *FakeCluster) DialHost(id string) (cluster.Host, error) {
 	return client, nil
 }
 
-func (c *FakeCluster) AddJobs(req *host.AddJobsReq) (map[string]host.Host, error) {
+func (c *FakeCluster) AddJobs(req map[string][]*host.Job) (map[string]host.Host, error) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
-	for hostID, jobs := range req.HostJobs {
+	for hostID, jobs := range req {
 		host, ok := c.hosts[hostID]
 		if !ok {
 			return nil, errors.New("FakeCluster: unknown host")
