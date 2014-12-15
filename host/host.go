@@ -17,7 +17,6 @@ import (
 	"github.com/flynn/flynn/host/types"
 	"github.com/flynn/flynn/pkg/attempt"
 	"github.com/flynn/flynn/pkg/cluster"
-	rpc "github.com/flynn/flynn/pkg/rpcplus/comborpc"
 	"github.com/flynn/flynn/pkg/shutdown"
 )
 
@@ -221,15 +220,15 @@ func runDaemon(args *docopt.Args) {
 	select {
 	case <-sampiStandby:
 		g.Log(grohl.Data{"at": "sampi_leader"})
-		rpc.Register(sampiCluster)
+		sampiCluster.ServeHTTP(sh)
 	case <-time.After(5 * time.Millisecond):
 		go func() {
 			<-sampiStandby
 			g.Log(grohl.Data{"at": "sampi_leader"})
-			rpc.Register(sampiCluster)
+			sampiCluster.ServeHTTP(sh)
 		}()
 	}
-	cluster, err := cluster.NewClientWithSelf(hostID, NewLocalClient(hostID, sampiCluster))
+	cluster, err := cluster.NewClientWithID(hostID)
 	if err != nil {
 		sh.Fatal(err)
 	}
