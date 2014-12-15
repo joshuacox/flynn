@@ -74,9 +74,7 @@ func (c *hostClient) StopJob(id string) error {
 }
 
 func (c *hostClient) StreamEvents(id string, ch chan<- host.Event) io.Closer {
-	header := http.Header{
-		"Accept": []string{"text/event-stream"},
-	}
+	header := http.Header{"Accept": []string{"text/event-stream"}}
 	r := fmt.Sprintf("/host/jobs/%s", id)
 	if id == "all" {
 		r = "/host/jobs"
