@@ -50,7 +50,7 @@ func (c *FakeCluster) DialHost(id string) (cluster.Host, error) {
 	return client, nil
 }
 
-func (c *FakeCluster) AddJobs(req *host.AddJobsReq) (*host.AddJobsRes, error) {
+func (c *FakeCluster) AddJobs(req *host.AddJobsReq) (map[string]host.Host, error) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 	for hostID, jobs := range req.HostJobs {
@@ -66,7 +66,7 @@ func (c *FakeCluster) AddJobs(req *host.AddJobsReq) (*host.AddJobsRes, error) {
 		host.Jobs = append(host.Jobs, jobs...)
 		c.hosts[hostID] = host
 	}
-	return &host.AddJobsRes{State: c.hosts}, nil
+	return c.hosts, nil
 }
 
 func (c *FakeCluster) RemoveJob(hostID, jobID string, errored bool) error {

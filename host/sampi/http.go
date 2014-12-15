@@ -28,16 +28,15 @@ func (s *Cluster) ListHosts(ret *map[string]host.Host) error {
 	return nil
 }
 
-func (s *Cluster) AddJobs(req *host.AddJobsReq, res *host.AddJobsRes) error {
+func (s *Cluster) AddJobs(req *host.AddJobsReq) (map[string]host.Host, error) {
 	s.state.Begin()
-	*res = host.AddJobsRes{}
 	for host, jobs := range req.HostJobs {
 		if err := s.state.AddJobs(host, jobs); err != nil {
 			s.state.Rollback()
-			return err
+			return nil, err
 		}
 	}
-	res.State = s.state.Commit()
+	res := s.state.Commit()
 
 	for host, jobs := range req.HostJobs {
 		for _, job := range jobs {
@@ -45,7 +44,7 @@ func (s *Cluster) AddJobs(req *host.AddJobsReq, res *host.AddJobsRes) error {
 		}
 	}
 
-	return nil
+	return res, nil
 }
 
 // Host Service methods
@@ -170,7 +169,6 @@ func addJobs(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprouter.P
 	rh := httphelper.NewReponseHelper(w)
 	//hostID := ps.ByName("host_id")
 	req := host.AddJobsReq{}
-	res := host.AddJobsRes{}
 
 	_, err = r.Body.Read(data)
 	if err != nil {
@@ -182,7 +180,7 @@ func addJobs(c *Cluster, w http.ResponseWriter, r *http.Request, ps httprouter.P
 		rh.Error(err)
 		return
 	}
-	err = c.AddJobs(&req, &res)
+	res, err := c.AddJobs(&req)
 	if err != nil {
 		rh.Error(err)
 		return

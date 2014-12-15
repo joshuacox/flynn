@@ -130,7 +130,7 @@ func scanJobEvent(s postgres.Scanner) (*ct.JobEvent, error) {
 type clusterClient interface {
 	ListHosts() ([]host.Host, error)
 	DialHost(string) (cluster.Host, error)
-	AddJobs(*host.AddJobsReq) (*host.AddJobsRes, error)
+	AddJobs(*host.AddJobsReq) (map[string]host.Host, error)
 }
 
 func listJobs(req *http.Request, w http.ResponseWriter, app *ct.App, repo *JobRepo, r ResponseHelper) {

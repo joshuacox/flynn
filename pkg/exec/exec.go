@@ -88,8 +88,8 @@ func Command(artifact host.Artifact, cmd ...string) *Cmd {
 }
 
 type ClusterClient interface {
-	ListHosts() ([]host.Host, error)
-	AddJobs(*host.AddJobsReq) (*host.AddJobsRes, error)
+	ListHosts() (map[string]host.Host, error)
+	AddJobs(*host.AddJobsReq) (map[string]host.Host, error)
 	DialHost(string) (cluster.Host, error)
 }
 

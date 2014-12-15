@@ -103,11 +103,6 @@ type AddJobsReq struct {
 	HostJobs map[string][]*Job
 }
 
-type AddJobsRes struct {
-	// The state of the cluster after the operation
-	State map[string]Host
-}
-
 type Event struct {
 	Event string
 	JobID string
