@@ -221,7 +221,7 @@ func (cluster *Cluster) ServeHTTP(sh *shutdown.Handler) error {
 	r := httprouter.New()
 	r.GET("/cluster/hosts", clusterMiddleware(cluster, listHosts))
 	r.PUT("/cluster/hosts/:id", clusterMiddleware(cluster, registerHost))
-	r.POST("/cluster/hosts/:host_id/jobs", clusterMiddleware(cluster, addJobs))
+	r.POST("/cluster/jobs", clusterMiddleware(cluster, addJobs))
 	r.DELETE("/cluster/hosts/:host_id/jobs/:job_id", clusterMiddleware(cluster, removeJob))
 	r.GET("/cluster/events", clusterMiddleware(cluster, streamHostEvents))
 
