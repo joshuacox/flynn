@@ -85,6 +85,7 @@ func handleJob(job *queue.Job) error {
 	defer close(events)
 	go func() {
 		for e := range events {
+			e.DeploymentID = deployment.ID
 			sendDeploymentEvent(e)
 		}
 	}()
@@ -95,6 +96,11 @@ func handleJob(job *queue.Job) error {
 	if err := client.SetAppRelease(deployment.AppID, deployment.NewReleaseID); err != nil {
 		return err
 	}
+	// signal success
+	sendDeploymentEvent(deployer.DeploymentEvent{
+		DeploymentID: deployment.ID,
+		ReleaseID:    "",
+	})
 	return nil
 }
 

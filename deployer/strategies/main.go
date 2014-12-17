@@ -41,32 +41,40 @@ func jobEventsEqual(expected, actual jobEvents) bool {
 
 type jobEvents map[string]map[string]int
 
-func waitForJobEvents(events chan *ct.JobEvent, expected jobEvents) (lastID int64, jobID string, err error) {
-	fmt.Printf("waiting for job events: %v", expected)
+func waitForJobEvents(events chan *ct.JobEvent, deployEvents chan<- deployer.DeploymentEvent, expected jobEvents) error {
+	fmt.Printf("waiting for job events: %v\n", expected)
 	actual := make(jobEvents)
 	for {
 	inner:
 		select {
 		case event := <-events:
-			fmt.Printf("got job event: %s %s %s", event.Type, event.JobID, event.State)
-			lastID = event.ID
-			jobID = event.JobID
+			fmt.Printf("got job event: %s %s %s\n", event.Type, event.JobID, event.State)
 			if _, ok := actual[event.Type]; !ok {
 				actual[event.Type] = make(map[string]int)
 			}
 			switch event.State {
 			case "up":
 				actual[event.Type]["up"] += 1
+				deployEvents <- deployer.DeploymentEvent{
+					ReleaseID: event.Job.ReleaseID,
+					JobState:  event.State,
+					JobType:   "up",
+				}
 			case "down", "crashed":
 				actual[event.Type]["down"] += 1
+				deployEvents <- deployer.DeploymentEvent{
+					ReleaseID: event.Job.ReleaseID,
+					JobState:  event.State,
+					JobType:   "down",
+				}
 			default:
 				break inner
 			}
 			if jobEventsEqual(expected, actual) {
-				return
+				return nil
 			}
 		case <-time.After(60 * time.Second):
-			return 0, "", fmt.Errorf("timed out waiting for job events: ", expected)
+			return fmt.Errorf("timed out waiting for job events: ", expected)
 		}
 	}
 }
