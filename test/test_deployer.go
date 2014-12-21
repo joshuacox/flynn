@@ -19,6 +19,10 @@ var _ = c.Suite(&DeployerSuite{})
 
 func (s *DeployerSuite) TestDeployment(t *c.C) {
 	app, release := s.createApp(t)
+
+	scale, err := s.controllerClient(t).StreamJobEvents(app.Name, 0)
+	t.Assert(err, c.IsNil)
+
 	t.Assert(s.controllerClient(t).PutFormation(&ct.Formation{
 		AppID:     app.ID,
 		ReleaseID: release.ID,
@@ -29,6 +33,8 @@ func (s *DeployerSuite) TestDeployment(t *c.C) {
 	oldReleaseID := release.ID
 	release.ID = ""
 	t.Assert(s.controllerClient(t).CreateRelease(release), c.IsNil)
+
+	waitForJobEvents(t, scale.Events, jobEvents{"printer": {"up": 2}})
 
 	client, err := deployerc.New()
 	t.Assert(err, c.IsNil)
