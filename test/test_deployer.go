@@ -17,7 +17,7 @@ type DeployerSuite struct {
 
 var _ = c.Suite(&DeployerSuite{})
 
-func (s *DeployerSuite) TestDeployment(t *c.C) {
+func (s *DeployerSuite) createDeployment(t *c.C, strategy string) (string, string, *deployerc.DeploymentEventStream) {
 	app, release := s.createApp(t)
 
 	scale, err := s.controllerClient(t).StreamJobEvents(app.Name, 0)
@@ -43,28 +43,30 @@ func (s *DeployerSuite) TestDeployment(t *c.C) {
 
 	stream, err := client.StreamDeploymentEvents(deployID, 0)
 	t.Assert(err, c.IsNil)
-	defer stream.Close()
 
 	deployment := &deployer.Deployment{
 		ID:           deployID,
 		AppID:        app.ID,
 		OldReleaseID: oldReleaseID,
 		NewReleaseID: release.ID,
-		Strategy:     "one-by-one",
+		Strategy:     strategy,
 		Steps: map[string]deployer.Step{
 			"before_deployment": {Cmd: []string{"a", "b", "c"}},
 			"after_deployment":  {Cmd: []string{"d", "e", "f"}},
 		},
 	}
 	t.Assert(client.CreateDeployment(deployment), c.IsNil)
+	return release.ID, oldReleaseID, stream
+}
 
+func waitForDeploymentEvents(t *c.C, stream chan *deployer.DeploymentEvent, expected []*deployer.DeploymentEvent) {
 	// wait for an event with no release to mark the end of the deployment,
 	// collecting events along the way
 	events := []*deployer.DeploymentEvent{}
 loop:
 	for {
 		select {
-		case e := <-stream.Events:
+		case e := <-stream:
 			events = append(events, e)
 			if e.ReleaseID == "" {
 				break loop
@@ -72,17 +74,6 @@ loop:
 		case <-time.After(5 * time.Second):
 			t.Fatal("timed out waiting for deployment event")
 		}
-	}
-	expected := []*deployer.DeploymentEvent{
-		{ReleaseID: release.ID, JobType: "printer", JobState: "starting"},
-		{ReleaseID: release.ID, JobType: "printer", JobState: "up"},
-		{ReleaseID: oldReleaseID, JobType: "printer", JobState: "stopping"},
-		{ReleaseID: oldReleaseID, JobType: "printer", JobState: "down"},
-		{ReleaseID: release.ID, JobType: "printer", JobState: "starting"},
-		{ReleaseID: release.ID, JobType: "printer", JobState: "up"},
-		{ReleaseID: oldReleaseID, JobType: "printer", JobState: "stopping"},
-		{ReleaseID: oldReleaseID, JobType: "printer", JobState: "down"},
-		{ReleaseID: "", JobType: "", JobState: ""},
 	}
 	compare := func(t *c.C, i *deployer.DeploymentEvent, j *deployer.DeploymentEvent) {
 		fmt.Println("Comparing", i, j)
@@ -94,4 +85,40 @@ loop:
 	for i, e := range expected {
 		compare(t, events[i], e)
 	}
+}
+
+func (s *DeployerSuite) TestOneByOneStrategy(t *c.C) {
+	releaseID, oldReleaseID, stream := s.createDeployment(t, "one-by-one")
+	defer stream.Close()
+
+	expected := []*deployer.DeploymentEvent{
+		{ReleaseID: releaseID, JobType: "printer", JobState: "starting"},
+		{ReleaseID: releaseID, JobType: "printer", JobState: "up"},
+		{ReleaseID: oldReleaseID, JobType: "printer", JobState: "stopping"},
+		{ReleaseID: oldReleaseID, JobType: "printer", JobState: "down"},
+		{ReleaseID: releaseID, JobType: "printer", JobState: "starting"},
+		{ReleaseID: releaseID, JobType: "printer", JobState: "up"},
+		{ReleaseID: oldReleaseID, JobType: "printer", JobState: "stopping"},
+		{ReleaseID: oldReleaseID, JobType: "printer", JobState: "down"},
+		{ReleaseID: "", JobType: "", JobState: ""},
+	}
+	waitForDeploymentEvents(t, stream.Events, expected)
+}
+
+func (s *DeployerSuite) TestAllAtOnceStrategy(t *c.C) {
+	releaseID, oldReleaseID, stream := s.createDeployment(t, "all-at-once")
+	defer stream.Close()
+
+	expected := []*deployer.DeploymentEvent{
+		{ReleaseID: releaseID, JobType: "printer", JobState: "starting"},
+		{ReleaseID: releaseID, JobType: "printer", JobState: "up"},
+		{ReleaseID: releaseID, JobType: "printer", JobState: "starting"},
+		{ReleaseID: releaseID, JobType: "printer", JobState: "up"},
+		{ReleaseID: oldReleaseID, JobType: "printer", JobState: "stopping"},
+		{ReleaseID: oldReleaseID, JobType: "printer", JobState: "down"},
+		{ReleaseID: oldReleaseID, JobType: "printer", JobState: "stopping"},
+		{ReleaseID: oldReleaseID, JobType: "printer", JobState: "down"},
+		{ReleaseID: "", JobType: "", JobState: ""},
+	}
+	waitForDeploymentEvents(t, stream.Events, expected)
 }
