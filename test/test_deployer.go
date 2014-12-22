@@ -8,7 +8,6 @@ import (
 	ct "github.com/flynn/flynn/controller/types"
 	deployerc "github.com/flynn/flynn/deployer/client"
 	"github.com/flynn/flynn/deployer/types"
-	"github.com/flynn/flynn/pkg/random"
 )
 
 type DeployerSuite struct {
@@ -17,7 +16,7 @@ type DeployerSuite struct {
 
 var _ = c.Suite(&DeployerSuite{})
 
-func (s *DeployerSuite) createDeployment(t *c.C, strategy string) (string, string, *deployerc.DeploymentEventStream) {
+func (s *DeployerSuite) createDeployment(t *c.C, strategy string) *deployer.Deployment {
 	app, release := s.createApp(t)
 
 	scale, err := s.controllerClient(t).StreamJobEvents(app.Name, 0)
@@ -39,13 +38,7 @@ func (s *DeployerSuite) createDeployment(t *c.C, strategy string) (string, strin
 	client, err := deployerc.New()
 	t.Assert(err, c.IsNil)
 
-	deployID := random.UUID()
-
-	stream, err := client.StreamDeploymentEvents(deployID, 0)
-	t.Assert(err, c.IsNil)
-
 	deployment := &deployer.Deployment{
-		ID:           deployID,
 		AppID:        app.ID,
 		OldReleaseID: oldReleaseID,
 		NewReleaseID: release.ID,
@@ -56,7 +49,7 @@ func (s *DeployerSuite) createDeployment(t *c.C, strategy string) (string, strin
 		},
 	}
 	t.Assert(client.CreateDeployment(deployment), c.IsNil)
-	return release.ID, oldReleaseID, stream
+	return deployment
 }
 
 func waitForDeploymentEvents(t *c.C, stream chan *deployer.DeploymentEvent, expected []*deployer.DeploymentEvent) {
@@ -88,7 +81,14 @@ loop:
 }
 
 func (s *DeployerSuite) TestOneByOneStrategy(t *c.C) {
-	releaseID, oldReleaseID, stream := s.createDeployment(t, "one-by-one")
+	deployment := s.createDeployment(t, "one-by-one")
+	releaseID := deployment.NewReleaseID
+	oldReleaseID := deployment.OldReleaseID
+
+	client, err := deployerc.New()
+	t.Assert(err, c.IsNil)
+	stream, err := client.StreamDeploymentEvents(deployment.ID, 0)
+	t.Assert(err, c.IsNil)
 	defer stream.Close()
 
 	expected := []*deployer.DeploymentEvent{
@@ -106,7 +106,14 @@ func (s *DeployerSuite) TestOneByOneStrategy(t *c.C) {
 }
 
 func (s *DeployerSuite) TestAllAtOnceStrategy(t *c.C) {
-	releaseID, oldReleaseID, stream := s.createDeployment(t, "all-at-once")
+	deployment := s.createDeployment(t, "all-at-once")
+	releaseID := deployment.NewReleaseID
+	oldReleaseID := deployment.OldReleaseID
+
+	client, err := deployerc.New()
+	t.Assert(err, c.IsNil)
+	stream, err := client.StreamDeploymentEvents(deployment.ID, 0)
+	t.Assert(err, c.IsNil)
 	defer stream.Close()
 
 	expected := []*deployer.DeploymentEvent{
