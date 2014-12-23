@@ -25,7 +25,7 @@ func NewCluster(state *State) *Cluster {
 
 // Scheduler Methods
 
-func (s *Cluster) ListHosts(ret *map[string]host.Host) error {
+func (s *Cluster) ListHosts(ret []host.Host) error {
 	*ret = s.state.Get()
 	return nil
 }

@@ -79,7 +79,7 @@ type context struct {
 }
 
 type clusterClient interface {
-	ListHosts() (map[string]host.Host, error)
+	ListHosts() ([]host.Host, error)
 	AddJobs(jobs map[string][]*host.Job) (map[string]host.Host, error)
 	DialHost(id string) (cluster.Host, error)
 	StreamHostEvents(ch chan<- *host.HostEvent) cluster.Stream
