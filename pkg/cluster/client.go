@@ -202,12 +202,12 @@ func (c *Client) DialHost(id string) (Host, error) {
 
 // RegisterHost is used by the host service to register itself with the leader
 // and get a stream of new jobs. It is not used by clients.
-func (c *Client) RegisterHost(h *host.Host, jobs chan host.Job) io.Closer {
+func (c *Client) RegisterHost(h *host.Host, jobs chan host.Job) (io.Closer, error) {
 	header := http.Header{"Accept": []string{"text/event-stream"}}
 	res, err := c.c.RawReq("PUT", fmt.Sprintf("/cluster/hosts/%s", h.ID), header, h, nil)
 
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	stream := JobEventStream{
@@ -230,7 +230,7 @@ func (c *Client) RegisterHost(h *host.Host, jobs chan host.Job) io.Closer {
 			stream.Chan <- event
 		}
 	}()
-	return stream
+	return stream, nil
 }
 
 type JobEventStream struct {
@@ -255,12 +255,12 @@ func (c *Client) RemoveJobs(jobIDs []string) error {
 }
 
 // StreamHostEvents sends a stream of host events from the host to ch.
-func (c *Client) StreamHostEvents(ch chan host.HostEvent) io.Closer {
+func (c *Client) StreamHostEvents(ch chan host.HostEvent) (io.Closer, error) {
 	header := http.Header{"Accept": []string{"text/event-stream"}}
 	res, err := c.c.RawReq("GET", "/cluster/events", header, nil, nil)
 
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	stream := HostEventStream{
@@ -283,7 +283,7 @@ func (c *Client) StreamHostEvents(ch chan host.HostEvent) io.Closer {
 			stream.Chan <- event
 		}
 	}()
-	return stream
+	return stream, nil
 }
 
 type HostEventStream struct {
