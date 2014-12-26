@@ -189,7 +189,7 @@ func (c *Client) DialHost(id string) (Host, error) {
 
 // RegisterHost is used by the host service to register itself with the leader
 // and get a stream of new jobs. It is not used by clients.
-func (c *Client) RegisterHost(h *host.Host, jobs chan host.Job) (io.Closer, error) {
+func (c *Client) RegisterHost(h *host.Host, jobs chan host.Job) (Stream, error) {
 	header := http.Header{"Accept": []string{"text/event-stream"}}
 	res, err := c.c.RawReq("PUT", fmt.Sprintf("/cluster/hosts/%s", h.ID), header, h, nil)
 
@@ -212,6 +212,7 @@ func (c *Client) RegisterHost(h *host.Host, jobs chan host.Job) (io.Closer, erro
 		for {
 			event := host.Job{}
 			if err := dec.Decode(&event); err != nil {
+				stream.err = err
 				break
 			}
 			stream.Chan <- event
@@ -223,6 +224,11 @@ func (c *Client) RegisterHost(h *host.Host, jobs chan host.Job) (io.Closer, erro
 type JobEventStream struct {
 	Chan chan<- host.Job
 	body io.ReadCloser
+	err  error
+}
+
+func (e JobEventStream) Err() error {
+	return e.err
 }
 
 func (e JobEventStream) Close() error {
@@ -239,10 +245,9 @@ func (c *Client) RemoveJob(hostID, jobID string) error {
 }
 
 // StreamHostEvents sends a stream of host events from the host to ch.
-func (c *Client) StreamHostEvents(ch chan host.HostEvent) (io.Closer, error) {
+func (c *Client) StreamHostEvents(ch chan host.HostEvent) (Stream, error) {
 	header := http.Header{"Accept": []string{"text/event-stream"}}
 	res, err := c.c.RawReq("GET", "/cluster/events", header, nil, nil)
-
 	if err != nil {
 		return nil, err
 	}
@@ -262,6 +267,7 @@ func (c *Client) StreamHostEvents(ch chan host.HostEvent) (io.Closer, error) {
 		for {
 			event := host.HostEvent{}
 			if err := dec.Decode(&event); err != nil {
+				stream.err = err
 				break
 			}
 			stream.Chan <- event
@@ -273,8 +279,23 @@ func (c *Client) StreamHostEvents(ch chan host.HostEvent) (io.Closer, error) {
 type HostEventStream struct {
 	Chan chan<- host.HostEvent
 	body io.ReadCloser
+	err  error
+}
+
+func (e HostEventStream) Err() error {
+	return e.err
 }
 
 func (e HostEventStream) Close() error {
 	return e.body.Close()
+}
+
+// A Stream allows control over a stream sent to a channel.
+type Stream interface {
+	// Close signals the sender to stop sending and then closes the channel.
+	Close() error
+
+	// Err reads the error (if any) that occurred while receiving the
+	// stream. It must only be called after the channel has been closed.
+	Err() error
 }
