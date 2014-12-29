@@ -189,7 +189,7 @@ func (c *Client) DialHost(id string) (Host, error) {
 
 // RegisterHost is used by the host service to register itself with the leader
 // and get a stream of new jobs. It is not used by clients.
-func (c *Client) RegisterHost(h *host.Host, jobs chan host.Job) (Stream, error) {
+func (c *Client) RegisterHost(h *host.Host, jobs chan *host.Job) (Stream, error) {
 	header := http.Header{"Accept": []string{"text/event-stream"}}
 	res, err := c.c.RawReq("PUT", fmt.Sprintf("/cluster/hosts/%s", h.ID), header, h, nil)
 
@@ -210,8 +210,8 @@ func (c *Client) RegisterHost(h *host.Host, jobs chan host.Job) (Stream, error) 
 		r := bufio.NewReader(stream.body)
 		dec := sse.NewDecoder(r)
 		for {
-			event := host.Job{}
-			if err := dec.Decode(&event); err != nil {
+			event := &host.Job{}
+			if err := dec.Decode(event); err != nil {
 				stream.err = err
 				break
 			}
@@ -222,7 +222,7 @@ func (c *Client) RegisterHost(h *host.Host, jobs chan host.Job) (Stream, error) 
 }
 
 type JobEventStream struct {
-	Chan chan<- host.Job
+	Chan chan<- *host.Job
 	body io.ReadCloser
 	err  error
 }
@@ -245,7 +245,7 @@ func (c *Client) RemoveJob(hostID, jobID string) error {
 }
 
 // StreamHostEvents sends a stream of host events from the host to ch.
-func (c *Client) StreamHostEvents(ch chan host.HostEvent) (Stream, error) {
+func (c *Client) StreamHostEvents(ch chan<- *host.HostEvent) (Stream, error) {
 	header := http.Header{"Accept": []string{"text/event-stream"}}
 	res, err := c.c.RawReq("GET", "/cluster/events", header, nil, nil)
 	if err != nil {
@@ -265,8 +265,8 @@ func (c *Client) StreamHostEvents(ch chan host.HostEvent) (Stream, error) {
 		r := bufio.NewReader(stream.body)
 		dec := sse.NewDecoder(r)
 		for {
-			event := host.HostEvent{}
-			if err := dec.Decode(&event); err != nil {
+			event := &host.HostEvent{}
+			if err := dec.Decode(event); err != nil {
 				stream.err = err
 				break
 			}
@@ -277,7 +277,7 @@ func (c *Client) StreamHostEvents(ch chan host.HostEvent) (Stream, error) {
 }
 
 type HostEventStream struct {
-	Chan chan<- host.HostEvent
+	Chan chan<- *host.HostEvent
 	body io.ReadCloser
 	err  error
 }
