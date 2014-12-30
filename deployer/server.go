@@ -161,17 +161,12 @@ func createDeployment(w http.ResponseWriter, req *http.Request, params httproute
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	steps, err := json.Marshal(deployment.Steps)
-	if err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
 	if deployment.ID == "" {
 		deployment.ID = random.UUID()
 	}
 	// TODO: wrap insert + queue push in a transaction
-	query := "INSERT INTO deployments (deployment_id, app_id, old_release_id, new_release_id, strategy, steps) VALUES ($1, $2, $3, $4, $5, $6) RETURNING created_at"
-	if err := db.QueryRow(query, deployment.ID, deployment.AppID, deployment.OldReleaseID, deployment.NewReleaseID, deployment.Strategy, steps).Scan(&deployment.CreatedAt); err != nil {
+	query := "INSERT INTO deployments (deployment_id, app_id, old_release_id, new_release_id, strategy) VALUES ($1, $2, $3, $4, $5, $6) RETURNING created_at"
+	if err := db.QueryRow(query, deployment.ID, deployment.AppID, deployment.OldReleaseID, deployment.NewReleaseID, deployment.Strategy).Scan(&deployment.CreatedAt); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
@@ -194,9 +189,6 @@ func getDeployment(id string) (*deployer.Deployment, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(steps, &d.Steps); err != nil {
-		return nil, err
-	}
 	return d, nil
 }
 
@@ -213,9 +205,6 @@ func listDeployments(status deployer.Status) ([]*deployer.Deployment, error) {
 		err := rows.Scan(&d.ID, &d.AppID, &d.OldReleaseID, &d.NewReleaseID, &d.Strategy, &steps, &d.CreatedAt)
 		if err != nil {
 			rows.Close()
-			return nil, err
-		}
-		if err := json.Unmarshal(steps, &d.Steps); err != nil {
 			return nil, err
 		}
 	}

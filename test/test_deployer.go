@@ -43,10 +43,6 @@ func (s *DeployerSuite) createDeployment(t *c.C, strategy string) *deployer.Depl
 		OldReleaseID: oldReleaseID,
 		NewReleaseID: release.ID,
 		Strategy:     strategy,
-		Steps: map[string]deployer.Step{
-			"before_deployment": {Cmd: []string{"a", "b", "c"}},
-			"after_deployment":  {Cmd: []string{"d", "e", "f"}},
-		},
 	}
 	t.Assert(client.CreateDeployment(deployment), c.IsNil)
 	return deployment
