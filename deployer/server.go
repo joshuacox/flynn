@@ -83,9 +83,23 @@ func handleJob(job *queue.Job) (e error) {
 		return err
 	}
 	setDeploymentStatus(id, deployer.StatusRunning)
+	strategy, err := strategy.GetStrategy(deployment.Strategy, client)
+	if err != nil {
+		// TODO: log error
+		return err
+	}
+	events := make(chan deployer.DeploymentEvent)
+	defer close(events)
+	go func() {
+		for ev := range events {
+			ev.DeploymentID = deployment.ID
+			sendDeploymentEvent(ev)
+		}
+	}()
 	defer func() {
 		// rollback failed deploy
 		if e != nil {
+			events <- deployer.DeploymentEvent{ReleaseID: "fail"}
 			setDeploymentStatus(id, deployer.StatusFailed)
 			if err := client.PutFormation(f); err != nil {
 				e = err
@@ -101,19 +115,6 @@ func handleJob(job *queue.Job) (e error) {
 			}
 		}
 		e = nil
-	}()
-	strategy, err := strategy.GetStrategy(deployment.Strategy, client)
-	if err != nil {
-		// TODO: log error
-		return err
-	}
-	events := make(chan deployer.DeploymentEvent)
-	defer close(events)
-	go func() {
-		for ev := range events {
-			ev.DeploymentID = deployment.ID
-			sendDeploymentEvent(ev)
-		}
 	}()
 	if err := strategy.Perform(deployment, events); err != nil {
 		// TODO: log error
