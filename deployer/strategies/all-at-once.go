@@ -40,7 +40,7 @@ func (s AllAtOnce) Perform(d *deployer.Deployment, events chan<- deployer.Deploy
 				JobType:   typ,
 			}
 		}
-		expect[typ] = map[string]int{"up": n}
+		expect[d.NewReleaseID] = map[string]map[string]int{typ: {"up": n}}
 	}
 	if err := waitForJobEvents(stream.Events, events, expect); err != nil {
 		return err
@@ -57,7 +57,7 @@ func (s AllAtOnce) Perform(d *deployer.Deployment, events chan<- deployer.Deploy
 				JobType:   typ,
 			}
 		}
-		expect[typ] = map[string]int{"down": n}
+		expect[d.OldReleaseID] = map[string]map[string]int{typ: {"down": n}}
 	}
 	if err := waitForJobEvents(stream.Events, events, expect); err != nil {
 		return err

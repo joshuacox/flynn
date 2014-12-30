@@ -25,21 +25,27 @@ func GetStrategy(strategy string, client *controller.Client) (Performer, error) 
 
 // TODO: share with tests
 func jobEventsEqual(expected, actual jobEvents) bool {
-	for typ, events := range expected {
-		diff, ok := actual[typ]
+	for rel, m := range expected {
+		j, ok := actual[rel]
 		if !ok {
 			return false
 		}
-		for state, count := range events {
-			if diff[state] != count {
+		for typ, events := range m {
+			diff, ok := j[typ]
+			if !ok {
 				return false
+			}
+			for state, count := range events {
+				if diff[state] != count {
+					return false
+				}
 			}
 		}
 	}
 	return true
 }
 
-type jobEvents map[string]map[string]int
+type jobEvents map[string]map[string]map[string]int
 
 func waitForJobEvents(events chan *ct.JobEvent, deployEvents chan<- deployer.DeploymentEvent, expected jobEvents) error {
 	fmt.Printf("waiting for job events: %v\n", expected)
@@ -49,19 +55,22 @@ func waitForJobEvents(events chan *ct.JobEvent, deployEvents chan<- deployer.Dep
 		select {
 		case event := <-events:
 			fmt.Printf("got job event: %s %s %s\n", event.Type, event.JobID, event.State)
-			if _, ok := actual[event.Type]; !ok {
-				actual[event.Type] = make(map[string]int)
+			if _, ok := actual[event.Job.ReleaseID]; !ok {
+				actual[event.Job.ReleaseID] = make(map[string]map[string]int)
+			}
+			if _, ok := actual[event.Job.ReleaseID][event.Type]; !ok {
+				actual[event.Job.ReleaseID][event.Type] = make(map[string]int)
 			}
 			switch event.State {
 			case "up":
-				actual[event.Type]["up"] += 1
+				actual[event.Job.ReleaseID][event.Type]["up"] += 1
 				deployEvents <- deployer.DeploymentEvent{
 					ReleaseID: event.Job.ReleaseID,
 					JobState:  "up",
 					JobType:   event.Type,
 				}
 			case "down", "crashed":
-				actual[event.Type]["down"] += 1
+				actual[event.Job.ReleaseID][event.Type]["down"] += 1
 				deployEvents <- deployer.DeploymentEvent{
 					ReleaseID: event.Job.ReleaseID,
 					JobState:  "down",
